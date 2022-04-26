@@ -74,11 +74,17 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   void resultSound(String result){
-    audios=[
-      Audio("assets/audio/"+widget.character+"/montant.mp3"),
-      Audio("assets/audio/"+widget.character+"/"+result+".mp3"),
-      Audio("assets/audio/"+widget.character+"/dinar.mp3")
-    ];
+    if(result == '0'){
+      audios=[
+        Audio("assets/audio/"+widget.character+"/0.mp3")
+      ];
+    }else {
+      audios = [
+        Audio("assets/audio/" + widget.character + "/montant.mp3"),
+        Audio("assets/audio/" + widget.character + "/" + result + ".mp3"),
+        Audio("assets/audio/" + widget.character + "/dinar.mp3")
+      ];
+    }
     ///start a sound after the result
     audioPlayer.open(
         Playlist(audios: audios ),
