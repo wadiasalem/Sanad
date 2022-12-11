@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:isolate';
 
 import 'package:assets_audio_player/assets_audio_player.dart';
@@ -28,6 +29,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   ///audio player
   AssetsAudioPlayer audioPlayer ;
+  AssetsAudioPlayer cameraStart ;
 
   ///audio play list
   List<Audio> audios ;
@@ -35,8 +37,13 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   /// Controller
   CameraController cameraController;
 
+  ///camera frame
   CameraImage cameraImage;
-  /// true when inference is ongoing
+
+  /// true when model is running
+  bool running;
+
+  /// true when still predicting
   bool predicting;
 
   /// Instance of Classifier
@@ -48,11 +55,14 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   ///timer 5 sec to predict
   Timer timer;
 
+  Timer exitTimer;
+
 
   @override
   void initState(){
     super.initState();
     audioPlayer = AssetsAudioPlayer.newPlayer();
+    cameraStart = AssetsAudioPlayer.newPlayer();
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
@@ -66,25 +76,42 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   void cameraStartSound(){
     ///start a sound after the camera starter
-    audioPlayer.open(
+    cameraStart.open(
         Audio("assets/audio/cameraStart.wav"),
         autoStart: true,
         showNotification: true
     );
   }
 
-  void resultSound(String result){
-    audios=[
-      Audio("assets/audio/"+widget.character+"/montant.mp3"),
-      Audio("assets/audio/"+widget.character+"/"+result+".mp3"),
-      Audio("assets/audio/"+widget.character+"/dinar.mp3")
-    ];
+  void resultSound(String result)async{
+    if(result == '0'){
+      audios=[
+        Audio("assets/audio/"+widget.character+"/0.mp3"),
+        Audio("assets/audio/"+widget.character+"/fermeture.mp3"),
+      ];
+    }else {
+      audios = [
+        Audio("assets/audio/" + widget.character + "/montant.mp3"),
+        Audio("assets/audio/" + widget.character + "/" + result + ".mp3"),
+        Audio("assets/audio/" + widget.character + "/dinar.mp3"),
+        Audio("assets/audio/"+widget.character+"/fermeture.mp3"),
+      ];
+    }
     ///start a sound after the result
-    audioPlayer.open(
+    await audioPlayer.open(
         Playlist(audios: audios ),
         autoStart: true,
         showNotification: true
     );
+    audioPlayer.playlistFinished.listen((finished) {
+      if(finished) {
+        predicting=false;
+        exitTimer = Timer(Duration(seconds: 2), () {
+          exit(0);
+        });
+      }
+    });
+
   }
 
   void initStateAsync() async {
@@ -96,7 +123,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     classifier = Classifier();
 
     /// Initially predicting = false
-    predicting = false;
+    running = false;
   }
 
 
@@ -112,17 +139,22 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
     ///init the camera
     await cameraController.initialize().then((_) async {
-      ///run sound
-      cameraStartSound();
-      /// Stream of image passed to [onLatestImageAvailable] callback
-      await cameraController.startImageStream(onLatestImageAvailable);
-      ///predict after 5 sec
-      timer = Timer(Duration(seconds: 5), () {
-        cameraController.stopImageStream();
-        resultSound(output.getResult());
-      });
+      startStream();
+    });
+  }
 
+  void startStream() async{
+    predicting=true;
+    exitTimer?.cancel();
 
+    ///run sound
+    cameraStartSound();
+    /// Stream of image passed to [onLatestImageAvailable] callback
+    await cameraController.startImageStream(onLatestImageAvailable);
+    ///predict after 5 sec
+    timer = Timer(Duration(seconds: 5), (){
+      cameraController.stopImageStream();
+      resultSound(output.getResult());
     });
   }
 
@@ -132,16 +164,16 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     if (classifier.modelLoaded == false) return ;
 
     /// If previous inference has not completed then return
-    if (predicting) return;
+    if (running) return;
 
     setState(() {
-      predicting = true;
+      running = true;
     });
     ///add the result to the output results
     output.addData(await classifier.predict(cameraImage));
     /// set predicting to false to allow new frames
     setState(() {
-      predicting = false;
+      running = false;
     });
 
   }
@@ -149,14 +181,21 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   _navigatWelcome()async{
     WidgetsFlutterBinding.ensureInitialized();
-    if(timer != null)timer.cancel();
+    timer?.cancel();
     audioPlayer.stop();
-    Navigator.pushReplacement(context, MaterialPageRoute(builder: (context)=>WelcomePage()));
+    Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context)=>WelcomePage()));
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return GestureDetector(
+        onTapUp: (_) => {
+          if(!predicting)
+          startStream()
+    },
+    child:Scaffold(
       backgroundColor: Colors.black,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
@@ -187,6 +226,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
        return CameraPreview(cameraController);
      }())),
 
+      )
     );
   }
 
